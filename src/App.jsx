@@ -1218,35 +1218,73 @@ export default function App() {
   const showToast = (text) => { setToast(text); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(null), 2600); };
 
   useEffect(() => {
+  let cancelled = false;
+
   async function loadStudyData() {
     try {
       const { data, error } = await supabase
         .from("study_data")
         .select("data")
         .eq("id", 1)
-        .single();
+        .maybeSingle();
+
+      if (cancelled) return;
 
       if (error) {
         console.error("Could not load study data:", error);
         showToast("Could not load saved data");
+        setStudy(createEmptyStudyState());
       } else if (data?.data) {
-        setStudy(data.data);
+        setStudy({
+          ...createEmptyStudyState(),
+          ...data.data,
+          subjects: Array.isArray(data.data.subjects) ? data.data.subjects : [],
+          notes: Array.isArray(data.data.notes) ? data.data.notes : [],
+          sources: Array.isArray(data.data.sources) ? data.data.sources : [],
+          tasks: Array.isArray(data.data.tasks) ? data.data.tasks : [],
+          flashcards: Array.isArray(data.data.flashcards) ? data.data.flashcards : [],
+          sessions: Array.isArray(data.data.sessions) ? data.data.sessions : [],
+        });
+      } else {
+        // No row exists yet — create an empty dataset.
+        const empty = createEmptyStudyState();
+        setStudy(empty);
+
+        const { error: insertError } = await supabase
+          .from("study_data")
+          .upsert({
+            id: 1,
+            data: empty,
+            updated_at: new Date().toISOString(),
+          });
+
+        if (insertError) {
+          console.error("Could not create study data:", insertError);
+          showToast("Could not create saved data");
+        }
       }
     } catch (error) {
       console.error("Supabase load error:", error);
-      showToast("Could not connect to database");
+      if (!cancelled) {
+        setStudy(createEmptyStudyState());
+        showToast("Could not connect to database");
+      }
     } finally {
-      setHydrated(true);
+      if (!cancelled) setHydrated(true);
     }
   }
 
   loadStudyData();
+
+  return () => {
+    cancelled = true;
+  };
 }, []);
 
   useEffect(() => {
   if (!hydrated) return;
 
-  async function saveStudyData() {
+  const timeout = setTimeout(async () => {
     try {
       const { error } = await supabase
         .from("study_data")
@@ -1258,13 +1296,15 @@ export default function App() {
 
       if (error) {
         console.error("Could not save study data:", error);
+        showToast("Could not save changes");
       }
     } catch (error) {
       console.error("Supabase save error:", error);
+      showToast("Could not save changes");
     }
-  }
+  }, 400);
 
-  saveStudyData();
+  return () => clearTimeout(timeout);
 }, [study, hydrated]);
 
   useEffect(() => {
@@ -1377,6 +1417,16 @@ export default function App() {
     setTimer({ running: false, seconds: 0, subjectId: null, mode: "stopwatch", targetMinutes: 25, breakMinutes: 5, taskId: null });
     setPostSessionPrompt(null);
     showToast("All data reset");
+  }
+  if (!hydrated) {
+    return (
+      <div className="app-root h-screen w-full flex items-center justify-center">
+        <style>{STYLES}</style>
+        <div className="fs-13" style={{ color: "var(--text-dim)" }}>
+          Loading your study data…
+        </div>
+      </div>
+    );
   }
 
   return (
