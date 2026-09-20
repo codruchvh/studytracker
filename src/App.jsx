@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { supabase } from "./supabase";
+
 import {
   Play, Pause, RotateCcw, Plus, GraduationCap, Clock, Pencil, Trash2, X,
   CheckCircle2, Circle, FileText, ExternalLink, Link2, ListChecks, Layers, AlertCircle,
