@@ -1218,16 +1218,54 @@ export default function App() {
   const showToast = (text) => { setToast(text); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(null), 2600); };
 
   useEffect(() => {
-    const available = storageProbe();
-    setStorageAvailable(available);
-    if (available) {
-      const saved = storageLoad();
-      if (saved && Array.isArray(saved.subjects)) setStudy(saved);
-    }
-    setHydrated(true);
-  }, []);
+  async function loadStudyData() {
+    try {
+      const { data, error } = await supabase
+        .from("study_data")
+        .select("data")
+        .eq("id", 1)
+        .single();
 
-  useEffect(() => { if (hydrated && storageAvailable) storageSave(study); }, [hydrated, storageAvailable, study]);
+      if (error) {
+        console.error("Could not load study data:", error);
+        showToast("Could not load saved data");
+      } else if (data?.data) {
+        setStudy(data.data);
+      }
+    } catch (error) {
+      console.error("Supabase load error:", error);
+      showToast("Could not connect to database");
+    } finally {
+      setHydrated(true);
+    }
+  }
+
+  loadStudyData();
+}, []);
+
+  useEffect(() => {
+  if (!hydrated) return;
+
+  async function saveStudyData() {
+    try {
+      const { error } = await supabase
+        .from("study_data")
+        .upsert({
+          id: 1,
+          data: study,
+          updated_at: new Date().toISOString(),
+        });
+
+      if (error) {
+        console.error("Could not save study data:", error);
+      }
+    } catch (error) {
+      console.error("Supabase save error:", error);
+    }
+  }
+
+  saveStudyData();
+}, [study, hydrated]);
 
   useEffect(() => {
     if (!timer.running) return;
@@ -1338,7 +1376,6 @@ export default function App() {
     setStudy(createEmptyStudyState());
     setTimer({ running: false, seconds: 0, subjectId: null, mode: "stopwatch", targetMinutes: 25, breakMinutes: 5, taskId: null });
     setPostSessionPrompt(null);
-    storageWipe();
     showToast("All data reset");
   }
 
